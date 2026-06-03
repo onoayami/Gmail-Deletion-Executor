@@ -16,8 +16,19 @@ function executeAllDeletionsManually() {
   var ui = SpreadsheetApp.getUi();
   var response = ui.alert('手動実行', '今すぐメールの自動削除処理を開始しますか？\n※結果は「手動発火ログ」タブに記録されます。', ui.ButtonSet.YES_NO);
   if (response == ui.Button.YES) {
-    executeAllDeletions(true); // true = 手動実行のフラグ
-    ui.alert('完了', '処理が完了しました。「手動発火ログ」をご確認ください。', ui.ButtonSet.OK);
+    try {
+      // 処理開始のお知らせを画面の右下に小さくトースト表示
+      SpreadsheetApp.getActiveSpreadsheet().toast('メールの削除処理を開始しました。完了までしばらくお待ちください...', '処理中 ⏳', -1);
+      
+      executeAllDeletions(true); // true = 手動実行のフラグ
+      
+      SpreadsheetApp.getActiveSpreadsheet().toast('処理が完了しました！', '完了 🎉', 5);
+      ui.alert('完了', '処理が完了しました。「手動発火ログ」をご確認ください。', ui.ButtonSet.OK);
+    } catch (e) {
+      // 万が一エラーで止まった場合
+      SpreadsheetApp.getActiveSpreadsheet().toast('処理中にエラーが発生しました。', 'エラー ❌', 10);
+      ui.alert('エラー', '処理中にエラーが発生しました:\n' + e.message, ui.ButtonSet.OK);
+    }
   }
 }
 
@@ -58,9 +69,9 @@ function deleteUnstarredMailsInLabel(isManual) {
     return;
   }
   
-  // 期間指定の検索条件を取得（削除設定シートから）
+  // 期間指定の検索条件を取得（その他削除設定シートから）
   var dateCondition = getDateCondition();
-  // もし【削除設定】シートが見つからずエラー(null)が返ってきた場合は処理を終了
+  // もしシートが見つからずエラー(null)が返ってきた場合は処理を終了
   if (dateCondition === null) {
     return;
   }
@@ -105,7 +116,7 @@ function deleteUnstarredMailsInLabel(isManual) {
       console.log("  -> 削除対象のメールはありませんでした。");
       if (isManual) {
         writeLog("ラベル", labelName, "削除対象のメールなし");
-        sheet.getRange(rowNumber, 4).setValue("該当するラベルが見つかりませんでした");
+        sheet.getRange(rowNumber, 4).setValue("ラベル、または削除の対象となるメールが見つかりませんでした");
       }
     }
   }
@@ -134,9 +145,9 @@ function deleteUnstarredMailsBySender(isManual) {
     return;
   }
   
-  // 期間指定の検索条件を取得（削除設定シートから）
+  // 期間指定の検索条件を取得（その他削除設定シートから）
   var dateCondition = getDateCondition();
-  // もし【削除設定】シートが見つからずエラー(null)が返ってきた場合は処理を終了
+  // もしシートが見つからずエラー(null)が返ってきた場合は処理を終了
   if (dateCondition === null) {
     return;
   }
@@ -180,7 +191,7 @@ function deleteUnstarredMailsBySender(isManual) {
       console.log("  -> 削除対象のメールはありませんでした。");
       if (isManual) {
         writeLog("送信元", senderAddress, "削除対象のメールなし");
-        sheet.getRange(rowNumber, 4).setValue("該当する送信元が見つかりませんでした");
+        sheet.getRange(rowNumber, 4).setValue("送信元メールアドレス、または削除の対象となるメールが見つかりませんでした");
       }
     }
   }
@@ -221,75 +232,63 @@ function writeLog(targetType, targetName, resultText) {
     sheet.setColumnWidth(3, 150);
   }
   
-  // 現在の日時を取得して追記
+  // 現在の日時を取得して追記（2行目に挿入して最新を上に）
   var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
-  sheet.appendRow([timestamp, targetType, targetName, resultText]);
+  sheet.insertRowAfter(1); // 1行目（見出し）の直後に新しい行を挿入
+  sheet.getRange(2, 1, 1, 4).setValues([[timestamp, targetType, targetName, resultText]]); // 2行目にデータを書き込む
 }
 
 // ==========================================
-// 共通処理: 「【削除設定】」シートから期間条件を取得する
+// 共通処理: 「その他削除設定」シートから期間条件を取得する
 // ==========================================
 function getDateCondition() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName("【削除設定】");
+  var sheet = ss.getSheetByName("その他削除設定");
   
-  // 1. シートが存在しない場合は、「【削除設定】」シートを新しく自動作成してアラートを出す
+  // 1. シートが存在しない場合は、「その他削除設定」シートを新しく自動作成してアラートを出す
   if (!sheet) {
-    sheet = ss.insertSheet("【削除設定】");
+    sheet = ss.insertSheet("その他削除設定");
     
     // 見出しなどを自動セット
-    sheet.getRange("A3").setValue("何日前のものを削除するか");
-    sheet.getRange("A4").setValue("指定日以前を削除するか");
+    sheet.getRange("A2").setValue("何日前のものを削除するか");
     
-    var statusRange = sheet.getRange("A1");
-    statusRange.setValue("【エラー】\nB3 (〇日前) または B4 (指定日) の設定がありません。\n安全のため処理を停止しました。");
+    var statusRange = sheet.getRange("A4:C4");
+    statusRange.merge(); // A4からC4を結合
+    statusRange.setValue("【エラー】\nB2 (〇日前) の設定がありません。\n安全のため処理を停止しました。");
     statusRange.setBackground("#ffcccc"); // ピンク色に設定
     statusRange.setVerticalAlignment("middle");
     statusRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW); // セル内で折り返さず表示する
     sheet.setColumnWidth(1, 200); // A列の幅を少し広げる
     
-    console.log("「【削除設定】」シートが存在しなかったため作成し、処理を停止しました。");
+    console.log("「その他削除設定」シートが存在しなかったため作成し、処理を停止しました。");
     return null; 
   }
   
-  // B3に「〇日前のもの」、B4に「yyyy/mm/dd以前」が入力されていると想定
-  var daysOld = sheet.getRange("B3").getValue();
-  var specificDate = sheet.getRange("B4").getValue();
+  // B2に「〇日前のもの」が入力されていると想定
+  var daysOld = sheet.getRange("B2").getValue();
   
   var dateQuery = "";
   var settingText = "";
   
-  // 1. yyyy/mm/dd (B4) が指定されている場合（こちらを優先）
-  if (specificDate) {
-    if (specificDate instanceof Date) {
-      var y = specificDate.getFullYear();
-      var m = ("0" + (specificDate.getMonth() + 1)).slice(-2);
-      var d = ("0" + specificDate.getDate()).slice(-2);
-      dateQuery = " before:" + y + "/" + m + "/" + d;
-      settingText = y + "年" + m + "月" + d + "日 以前のメールを削除";
-    } else {
-      dateQuery = " before:" + String(specificDate).replace(/-/g, '/');
-      settingText = String(specificDate) + " 以前のメールを削除";
-    }
-  } 
-  // 2. 自動計算で〇日前 (B3) が数値で指定されている場合
-  else if (daysOld && !isNaN(daysOld) && String(daysOld).trim() !== "") {
+  // 自動計算で〇日前 (B2) が数値で指定されている場合
+  if (daysOld && !isNaN(daysOld) && String(daysOld).trim() !== "") {
     dateQuery = " older_than:" + parseInt(daysOld, 10) + "d";
     settingText = parseInt(daysOld, 10) + " 日より前のメールを削除";
   }
   
-  var statusRange = sheet.getRange("A1");
+  var statusRange = sheet.getRange("A4:C4");
+  statusRange.merge(); // 実行時にA4:C4の結合状態を確保
   statusRange.setVerticalAlignment("middle");
   statusRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW); // セル内で折り返さず表示する
   
-  // どちらも未入力の場合はエラー（全件削除を防ぐ安全対策）にするか判定
+  // 未入力の場合はエラー（全件削除を防ぐ安全対策）にするか判定
   if (dateQuery === "") {
-    statusRange.setValue("【エラー】\nB3 (〇日前) または B4 (指定日) の設定がありません。\n安全のため処理を停止しました。");
+    statusRange.setValue("🚨エラー🚨\nB2 (〇日前) の設定がありません。\n安全のため処理を停止しました。");
     statusRange.setBackground("#ffcccc"); // ピンク色
     return null;
   } else {
     // 正常に設定されている場合
-    statusRange.setValue("✅ 以下の設定で運用中（" + settingText + "）");
+    statusRange.setValue("♻️「" + settingText + "」の設定で運用中");
     statusRange.setBackground("#ccffcc"); // 薄い緑色
   }
   
