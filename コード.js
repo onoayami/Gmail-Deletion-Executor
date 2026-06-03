@@ -69,6 +69,7 @@ function deleteUnstarredMailsInLabel(isManual) {
   for (var row = 1; row < data.length; row++) {
     var labelName = data[row][0]; // A列: ラベル名
     var isTarget = data[row][1];  // B列: 実行対象かどうかの判定 (チェックボックスならTRUE/FALSE)
+    var individualDays = data[row][2]; // C列: 個別指定日数
     var rowNumber = row + 1;
     
     // ラベル名が空の場合、またはチェックが付いていない(TRUEではない)場合はスキップ
@@ -76,10 +77,16 @@ function deleteUnstarredMailsInLabel(isManual) {
       continue;
     }
     
+    // ここで日付条件を切り替え（C列の個別設定に数字があれば優先）
+    var localDateCondition = dateCondition;
+    if (individualDays && !isNaN(individualDays) && String(individualDays).trim() !== "") {
+      localDateCondition = " older_than:" + parseInt(individualDays, 10) + "d";
+    }
+    
     console.log("【" + labelName + "】の処理を開始します。(行: " + rowNumber + ")");
     
     // 検索条件: 指定ラベルがあり、スターなし、かつ期間条件を追加
-    var searchQuery = "label:" + labelName + " -is:starred" + dateCondition;
+    var searchQuery = "label:" + labelName + " -is:starred" + localDateCondition;
     
     // 検索条件に一致するスレッドを取得 (一度の実行で最大100件処理する設定)
     var threads = GmailApp.search(searchQuery, 0, 100);
@@ -92,13 +99,13 @@ function deleteUnstarredMailsInLabel(isManual) {
       console.log("  -> " + threads.length + "件のスレッドをゴミ箱に移動しました。");
       if (isManual) {
         writeLog("ラベル", labelName, threads.length + "件 削除しました");
-        sheet.getRange(rowNumber, 3).setValue(""); // 成功時は備考(C列)をクリア
+        sheet.getRange(rowNumber, 4).setValue(""); // 成功時は備考(D列)をクリア
       }
     } else {
       console.log("  -> 削除対象のメールはありませんでした。");
       if (isManual) {
         writeLog("ラベル", labelName, "削除対象のメールなし");
-        sheet.getRange(rowNumber, 3).setValue("該当するラベルが見つかりませんでした");
+        sheet.getRange(rowNumber, 4).setValue("該当するラベルが見つかりませんでした");
       }
     }
   }
@@ -138,6 +145,7 @@ function deleteUnstarredMailsBySender(isManual) {
   for (var row = 1; row < data.length; row++) {
     var senderAddress = data[row][0]; // A列: 送信元アドレス（例: example@test.com）
     var isTarget = data[row][1];      // B列: 実行フラグ
+    var individualDays = data[row][2]; // C列: 個別指定日数
     var rowNumber = row + 1;
     
     // 空欄、またはチェックが付いていない場合はスキップ
@@ -145,10 +153,16 @@ function deleteUnstarredMailsBySender(isManual) {
       continue;
     }
     
+    // ここで日付条件を切り替え（C列の個別設定に数字があれば優先）
+    var localDateCondition = dateCondition;
+    if (individualDays && !isNaN(individualDays) && String(individualDays).trim() !== "") {
+      localDateCondition = " older_than:" + parseInt(individualDays, 10) + "d";
+    }
+    
     console.log("【送信元: " + senderAddress + "】の処理を開始します。(行: " + rowNumber + ")");
     
     // 検索条件: 指定の送信元であり、スターなし、かつ期間条件を追加
-    var searchQuery = "from:" + senderAddress + " -is:starred" + dateCondition;
+    var searchQuery = "from:" + senderAddress + " -is:starred" + localDateCondition;
     
     // 検索条件に一致するスレッドを取得 (最大100件)
     var threads = GmailApp.search(searchQuery, 0, 100);
@@ -160,13 +174,13 @@ function deleteUnstarredMailsBySender(isManual) {
       console.log("  -> " + threads.length + "件のスレッドをゴミ箱に移動しました。");
       if (isManual) {
         writeLog("送信元", senderAddress, threads.length + "件 削除しました");
-        sheet.getRange(rowNumber, 3).setValue(""); // 成功時は備考(C列)をクリア
+        sheet.getRange(rowNumber, 4).setValue(""); // 成功時は備考(D列)をクリア
       }
     } else {
       console.log("  -> 削除対象のメールはありませんでした。");
       if (isManual) {
         writeLog("送信元", senderAddress, "削除対象のメールなし");
-        sheet.getRange(rowNumber, 3).setValue("該当する送信元が見つかりませんでした");
+        sheet.getRange(rowNumber, 4).setValue("該当する送信元が見つかりませんでした");
       }
     }
   }
