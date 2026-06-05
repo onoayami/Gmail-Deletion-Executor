@@ -12,6 +12,7 @@ Google スプレッドシート上で設定した条件（特定のラベルや�
 ## 🚀 使い方（セットアップ手順）
 
 ### 1. スプレッドシートの準備
+テンプレート：https://docs.google.com/spreadsheets/d/104aymiC5TwyopixRClK0nfIj9K0RtFP-vIV5AgTUTlM/edit?gid=901867709#gid=901867709
 新規のGoogleスプレッドシートを作成し、以下の名前でシート（タブ）を作成・設定してください。
 （※未作成の状態でスクリプトを実行すると、一部のシートは自動生成されます）
 
