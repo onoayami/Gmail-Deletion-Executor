@@ -1,0 +1,11 @@
+# clasp のローカル設定（scriptId など個人情報を含むため公開しない）
+.clasp.json
+
+# clasp 認証情報
+.clasprc.json
+
+# macOS
+.DS_Store
+
+# Node.js（clasp 等を npm 管理する場合）
+node_modules/
