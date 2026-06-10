@@ -53,27 +53,34 @@ function emergencyStop() {
 // ==========================================
 // 1. ラベルを指定して削除する機能
 // ==========================================
-function deleteUnstarredMailsInLabel(isManual) {
+function deleteUnstarredMailsInLabel(isManual, dateCondition) {
   // --- 設定箇所 ---
   // シート名を指定してください
   var sheetName = "削除ラベル設定"; // ラベル名が設定されているシート名
   
-  // スプレッドシートから全データを取得
+  // スプレッドシートから対象シートを取得
   // A列に「ラベル名」、B列に「チェックボックス (TRUE/FALSE)」がある想定
   // getActiveSpreadsheet() で紐づいているスプレッドシートを直接取得します
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-  var data = sheet.getDataRange().getValues();
   
+  // シートが存在しない場合は終了（null のまま getDataRange を呼ぶとエラーになるため）
+  if (!sheet) {
+    console.log("「" + sheetName + "」シートが見つかりません。");
+    return;
+  }
+  
+  var data = sheet.getDataRange().getValues();
   if (!data || data.length === 0) {
     console.log("スプレッドシートにデータがありません。");
     return;
   }
   
-  // 期間指定の検索条件を取得（その他削除設定シートから）
-  var dateCondition = getDateCondition();
-  // もしシートが見つからずエラー(null)が返ってきた場合は処理を終了
-  if (dateCondition === null) {
-    return;
+  // 期間条件が渡されていない場合（GASエディタでこの関数を単体実行した場合など）は、ここで取得する
+  if (!dateCondition) {
+    dateCondition = getDateCondition();
+    if (dateCondition === null) {
+      return; // 期間設定が無効な場合は安全のため中止
+    }
   }
   
   // 1行目（見出し）をスキップするため、2行目（row = 1）から順番にチェックしていく
@@ -88,25 +95,21 @@ function deleteUnstarredMailsInLabel(isManual) {
       continue;
     }
     
-    // ここで日付条件を切り替え（C列の個別設定に数字があれば優先）
-    var localDateCondition = dateCondition;
-    if (individualDays && !isNaN(individualDays) && String(individualDays).trim() !== "") {
-      localDateCondition = " older_than:" + parseInt(individualDays, 10) + "d";
-    }
+    // 日付条件を決定（C列の個別設定に数字があればそちらを優先）
+    var individualQuery = buildOlderThanQuery(individualDays);
+    var localDateCondition = (individualQuery !== "") ? individualQuery : dateCondition;
     
     console.log("【" + labelName + "】の処理を開始します。(行: " + rowNumber + ")");
     
-    // 検索条件: 指定ラベルがあり、スターなし、かつ期間条件を追加
-    var searchQuery = "label:" + labelName + " -is:starred" + localDateCondition;
+    // 検索条件: 指定ラベルがあり、スターなし、かつ期間条件を追加（ラベル名にスペースが含まれても壊れないよう引用符で囲む）
+    var searchQuery = 'label:"' + labelName + '" -is:starred' + localDateCondition;
     
     // 検索条件に一致するスレッドを取得 (一度の実行で最大100件処理する設定)
     var threads = GmailApp.search(searchQuery, 0, 100);
     
     // スレッドが存在する場合、ゴミ箱へ移動
     if (threads.length > 0) {
-      for (var i = 0; i < threads.length; i++) {
-        threads[i].moveToTrash(); // ゴミ箱へ移動
-      }
+      GmailApp.moveThreadsToTrash(threads); // 取得したスレッドをまとめてゴミ箱へ移動
       console.log("  -> " + threads.length + "件のスレッドをゴミ箱に移動しました。");
       if (isManual) {
         writeLog("ラベル", labelName, threads.length + "件 削除しました");
@@ -125,11 +128,11 @@ function deleteUnstarredMailsInLabel(isManual) {
 // ==========================================
 // 2. 送信元（From）を指定して削除する機能
 // ==========================================
-function deleteUnstarredMailsBySender(isManual) {
+function deleteUnstarredMailsBySender(isManual, dateCondition) {
   // --- 設定箇所 ---
   var sheetName = "削除送信元設定"; // 送信元が設定されているシート名
   
-  // スプレッドシートから全データを取得
+  // スプレッドシートから対象シートを取得
   // A列に「送信元アドレス」、B列に「チェックボックス (TRUE/FALSE)」がある想定
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   
@@ -145,11 +148,12 @@ function deleteUnstarredMailsBySender(isManual) {
     return;
   }
   
-  // 期間指定の検索条件を取得（その他削除設定シートから）
-  var dateCondition = getDateCondition();
-  // もしシートが見つからずエラー(null)が返ってきた場合は処理を終了
-  if (dateCondition === null) {
-    return;
+  // 期間条件が渡されていない場合（GASエディタでこの関数を単体実行した場合など）は、ここで取得する
+  if (!dateCondition) {
+    dateCondition = getDateCondition();
+    if (dateCondition === null) {
+      return; // 期間設定が無効な場合は安全のため中止
+    }
   }
   
   // 1行目（見出し）をスキップ
@@ -164,11 +168,9 @@ function deleteUnstarredMailsBySender(isManual) {
       continue;
     }
     
-    // ここで日付条件を切り替え（C列の個別設定に数字があれば優先）
-    var localDateCondition = dateCondition;
-    if (individualDays && !isNaN(individualDays) && String(individualDays).trim() !== "") {
-      localDateCondition = " older_than:" + parseInt(individualDays, 10) + "d";
-    }
+    // 日付条件を決定（C列の個別設定に数字があればそちらを優先）
+    var individualQuery = buildOlderThanQuery(individualDays);
+    var localDateCondition = (individualQuery !== "") ? individualQuery : dateCondition;
     
     console.log("【送信元: " + senderAddress + "】の処理を開始します。(行: " + rowNumber + ")");
     
@@ -179,9 +181,7 @@ function deleteUnstarredMailsBySender(isManual) {
     var threads = GmailApp.search(searchQuery, 0, 100);
     
     if (threads.length > 0) {
-      for (var i = 0; i < threads.length; i++) {
-        threads[i].moveToTrash(); // ゴミ箱へ移動
-      }
+      GmailApp.moveThreadsToTrash(threads); // 取得したスレッドをまとめてゴミ箱へ移動
       console.log("  -> " + threads.length + "件のスレッドをゴミ箱に移動しました。");
       if (isManual) {
         writeLog("送信元", senderAddress, threads.length + "件 削除しました");
@@ -206,13 +206,40 @@ function executeAllDeletions(isManual) {
   // 定期トリガーから呼ばれた場合はイベントオブジェクトが入るため手動ではないと判定。
   var manualFlag = (isManual === true);
 
+  // 期間条件は最初に1回だけ取得し、各削除処理で使い回す
+  var dateCondition = getDateCondition();
+  // シートが無い・未設定などで null が返ってきた場合は、安全のため全処理を中止
+  if (dateCondition === null) {
+    console.log("--- 期間条件が取得できなかったため、処理を中止しました ---");
+    return;
+  }
+
   console.log("--- 【開始】ラベルに基づく削除処理 ---");
-  deleteUnstarredMailsInLabel(manualFlag);
+  deleteUnstarredMailsInLabel(manualFlag, dateCondition);
   
   console.log("--- 【開始】送信元に基づく削除処理 ---");
-  deleteUnstarredMailsBySender(manualFlag);
+  deleteUnstarredMailsBySender(manualFlag, dateCondition);
   
   console.log("--- すべての自動削除処理が完了しました ---");
+}
+
+// ==========================================
+// 共通処理: 個別日数(数値)から older_than 検索クエリを組み立てる
+// 数値でない・空・0以下の場合は空文字を返す（未設定扱い）
+// ==========================================
+function buildOlderThanQuery(days) {
+  if (days === "" || days === null || days === undefined) {
+    return "";
+  }
+  if (isNaN(days) || String(days).trim() === "") {
+    return "";
+  }
+  var numDays = parseInt(days, 10);
+  // 0や負の数は「未設定」と同じ扱いにし、全件削除などの暴走を防ぐ
+  if (isNaN(numDays) || numDays <= 0) {
+    return "";
+  }
+  return " older_than:" + numDays + "d";
 }
 
 // ==========================================
@@ -271,8 +298,8 @@ function getDateCondition() {
   var settingText = "";
   
   // 自動計算で〇日前 (B2) が数値で指定されている場合
-  if (daysOld && !isNaN(daysOld) && String(daysOld).trim() !== "") {
-    dateQuery = " older_than:" + parseInt(daysOld, 10) + "d";
+  dateQuery = buildOlderThanQuery(daysOld);
+  if (dateQuery !== "") {
     settingText = parseInt(daysOld, 10) + " 日より前のメールを削除";
   }
   
