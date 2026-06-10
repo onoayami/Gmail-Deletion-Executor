@@ -4,6 +4,9 @@
 # clasp 認証情報
 .clasprc.json
 
+# GAS マニフェスト（タイムゾーン等は各自の環境設定に任せるため公開しない）
+appsscript.json
+
 # macOS
 .DS_Store
 
